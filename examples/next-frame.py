@@ -435,12 +435,10 @@ class AliNextFrameGAN(BaseGAN):
                 #features += rotate(cs_next[:-4], cs_next[-4:])
 
             if config.encode_ug:
-                stack += rotate(ugs[1:-1], ugs[-1:]+ugs_next)
-                features += rotate(ucs[1:-1], ucs[-1:]+ucs_next)
+                stack += rotate(ugs[:-2], ugs[-2:]+ugs_next)
+                features += rotate(ucs[:-2], ucs[-2:]+ucs_next)
                 self.g0 = tf.concat(ugs[1:-1], axis=axis)
                 self.c0 = tf.concat(ucs[1:-1], axis=caxis)
-                stack.append(self.g0)
-                features.append(self.c0)
 
             #if config.encode_forward_next:
             #    stack += [tf.concat(gs_next[:-4],axis=axis)]
