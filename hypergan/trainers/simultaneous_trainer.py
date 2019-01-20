@@ -44,7 +44,8 @@ class SimultaneousTrainer(BaseTrainer):
         d_loss, g_loss = loss.sample
 
         self.before_step(self.current_step, feed_dict)
-        metric_values = sess.run([self.optimize_t] + self.output_variables(metrics), feed_dict)[1:]
+        step_tensors = self.train_hooks[0].step_tensors(self.current_step, feed_dict)
+        metric_values = sess.run([self.optimize_t] +step_tensors + self.output_variables(metrics), feed_dict)[1+len(step_tensors):]
         self.after_step(self.current_step, feed_dict)
 
         if self.current_step % 10 == 0:

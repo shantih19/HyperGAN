@@ -10,6 +10,7 @@ import time
 import re
 from hypergan.viewer import GlobalViewer
 from hypergan.samplers.base_sampler import BaseSampler
+from natsort import natsorted, ns
 from hypergan.gan_component import ValidationException, GANComponent
 from hypergan.samplers.random_walk_sampler import RandomWalkSampler
 from hypergan.samplers.debug_sampler import DebugSampler
@@ -95,26 +96,58 @@ class VideoFrameLoader:
             print("Error: Not enough frames in data folder ", directory)
 
         self.file_count = len(filenames)
-        filenames = sorted(filenames, key=alphanum_key)
+        filenames = natsorted(filenames)
         if self.file_count == 0:
             raise ValidationException("No images found in '" + directory + "'")
 
 
+        def _frames_for(filenames, offset):
+            fs = []
+            #fs = filenames[offset:-(self.file_count-offset)]
+            #for i in range(len(filenames)-self.frame_count-offset):
+            #    fs.append(filenames[i+offset:i+self.frame_count+offset])
+            fs.append(filenames[offset:-(self.frame_count-offset)])
+
+            fs = [f for x in fs for f in x]
+            fs = tf.convert_to_tensor(fs, dtype=tf.string)
+            return fs
         # creates arrays of filenames[:end], filenames[1:end-1], etc for serialized random batching
-        if self.shuffle:
-            frames  = [tf.train.slice_input_producer([filenames], shuffle=True)[0] for i in range(self.frame_count)]
-        else:
-            input_t = [filenames[i:i-self.frame_count] for i in range(self.frame_count)]
-            input_queue = tf.train.slice_input_producer(input_t)
-            frames = input_queue
+        input_t = [_frames_for(filenames, i) for i in range(self.frame_count)]
+        #frames = tf.train.slice_input_producer(input_t)
+        frames = input_t
+
+        def parse_function(filename):
+            image_string = tf.read_file(filename)
+            if format == 'jpg':
+                image = tf.image.decode_jpeg(image_string, channels=channels)
+            elif format == 'png':
+                image = tf.image.decode_png(image_string, channels=channels)
+            else:
+                print("[loader] Failed to load format", format)
+            image = tf.cast(image, tf.float32)
+            # Image processing for evaluation.
+            # Crop the central [height, width] of the image.
+            if crop:
+                image = hypergan.inputs.resize_image_patch.resize_image_with_crop_or_pad(image, height, width, dynamic_shape=True)
+            elif resize:
+                image = tf.image.resize_images(image, [height, width], 1)
+
+            image = image / 127.5 - 1.
+            tf.Tensor.set_shape(image, [height,width,channels])
+
+            return image
+
 
         # Read examples from files in the filename queue.
-        frames = [self.read_frame(frame, format, crop, resize) for frame in frames]
-        frames = self._get_data(frames)
-        self.frames = frames
+        dataset = [tf.data.Dataset.from_tensor_slices(fs) for fs in frames]
+        dataset = [d.map(parse_function, num_parallel_calls=4) for d in dataset]
+        dataset = [d.repeat() for d in dataset]
+        dataset = [d.prefetch(1) for d in dataset]
+        self.frames = [d.make_one_shot_iterator().get_next() for d in dataset]
+        self.frames = [tf.reshape(f, [self.batch_size, height, width, channels]) for f in self.frames]
 
-        x  = tf.train.slice_input_producer([filenames], shuffle=True)[0]
-        y  = tf.train.slice_input_producer([filenames], shuffle=True)[0]
+        x  = tf.train.slice_input_producer([filenames])[0]
+        y  = tf.train.slice_input_producer([filenames])[0]
         self.x = self.read_frame(x, format, crop, resize)
         self.y = self.read_frame(y, format, crop, resize)
         self.x = self._get_data([self.x])
@@ -151,12 +184,12 @@ class VideoFrameLoader:
 
     def _get_data(self, imgs):
         batch_size = self.batch_size
-        num_preprocess_threads = 24
-        return tf.train.shuffle_batch(
+        num_preprocess_threads = 4
+        return tf.train.batch(
                 imgs,
             batch_size=batch_size,
             num_threads=num_preprocess_threads,
-            capacity= batch_size*2, min_after_dequeue=batch_size)
+            capacity= batch_size*2 )
 inputs = VideoFrameLoader(args.batch_size, args.frames, args.shuffle)
 inputs.create(args.directory,
         channels=channels, 
@@ -173,13 +206,14 @@ os.makedirs(os.path.expanduser(os.path.dirname(save_file)), exist_ok=True)
 class RollingMemoryTrainHook(BaseTrainHook):
   def __init__(self, gan=None, config=None, trainer=None, name="RollingMemoryHook"):
     super().__init__(config=config, gan=gan, trainer=trainer, name=name)
-    cur_c = [gan.ucs[1], gan.cs[1]]
-    cur_z = [gan.uzs[1], gan.zs[1]]
-    prev_c = [gan.ucs[0], gan.cs[0]]
-    prev_z = [gan.uzs[0], gan.zs[0]]
+    cur_c = [gan.cs[1]]
+    cur_z = [gan.zs[1]]
+    prev_c = [gan.cs[0]]
+    prev_z = [gan.zs[0]]
     prev = prev_c + prev_z
     cur = cur_c + cur_z
     self.step_forward = [tf.assign(p, c) for p, c in zip(prev, cur)]
+    self.step_forward += [gan.zs[i] for i in range(len(gan.zs))]
     self.gan.add_metric('cur_c', gan.ops.squash(cur_c[0]))
     self.gan.add_metric('cur_z', gan.ops.squash(cur_z[0]))
 
@@ -188,7 +222,10 @@ class RollingMemoryTrainHook(BaseTrainHook):
     return [None, None]
 
   def after_step(self, step, feed_dict):
-      self.gan.session.run(self.step_forward)
+      pass
+
+  def step_tensors(self, step, feed_dict):
+      return self.step_forward
 
   def before_step(self, step, feed_dict):
     pass
@@ -223,11 +260,11 @@ class AliNextFrameGAN(BaseGAN):
             dist4 = UniformDistribution(self, config.z_distribution)
             dist5 = UniformDistribution(self, config.z_distribution)
             _uz = self.create_component(config.uz, name='u_to_z', input=dist.sample)
-            uz = tf.Variable(tf.zeros_like(_uz.sample), trainable=False)
+            uz = _uz.sample#tf.Variable(tf.zeros_like(_uz.sample), trainable=False)
             uz2 = tf.Variable(tf.zeros_like(_uz.sample), trainable=False)
             self.latent = uz
             _uc = self.create_component(config.uc, name='u_to_c', input=dist2.sample)
-            uc = tf.Variable(tf.zeros_like(_uc.sample), trainable=False)
+            uc = _uc.sample#tf.Variable(tf.zeros_like(_uc.sample), trainable=False)
             uc2 = tf.Variable(tf.zeros_like(_uc.sample), trainable=False)
 
 
@@ -255,6 +292,7 @@ class AliNextFrameGAN(BaseGAN):
                     self.encoder = c
                 return c.sample
             def ez(ft, zp,reuse=True):
+                print("--", ft, zp)
                 z = self.create_component(config.ez, name='ez', input=ft, features=[zp], reuse=reuse)
                 if not reuse:
                     self._g_vars += z.variables()
@@ -273,7 +311,8 @@ class AliNextFrameGAN(BaseGAN):
                 zs = [z0]
                 x_hats = [build_g(zs[-1], cs[-1], reuse=reuse)]
                 for i in range(len(fs)):
-                    print("encode frames", i)
+                    print("encode frames", i, zs[-1],cs[-1])
+                    print("output size", fs[i])
                     _reuse = reuse or (i!=0)
                     z = ez(fs[i], zs[-1], reuse=_reuse)
                     c = ec(z, cs[-1], reuse=_reuse)
@@ -396,8 +435,8 @@ class AliNextFrameGAN(BaseGAN):
                 #features += rotate(cs_next[:-4], cs_next[-4:])
 
             if config.encode_ug:
-                #stack += rotate(ugs[:-2], ugs[-2:]+ugs_next)
-                #features += rotate(ucs[:-2], ucs[-2:]+ucs_next)
+                stack += rotate(ugs[1:-1], ugs[-1:]+ugs_next)
+                features += rotate(ucs[1:-1], ucs[-1:]+ucs_next)
                 self.g0 = tf.concat(ugs[1:-1], axis=axis)
                 self.c0 = tf.concat(ucs[1:-1], axis=caxis)
                 stack.append(self.g0)
