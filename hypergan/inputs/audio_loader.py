@@ -1,11 +1,14 @@
 import glob
+import os
+from natsort import natsorted, ns
 from hypergan.inputs.resize_audio_patch import resize_audio_with_crop_or_pad
 from tensorflow.contrib import ffmpeg
+from hypergan.gan_component import ValidationException, GANComponent
 import tensorflow as tf
 
 class AudioLoader:
     """
-    AudioLoader loads a set of mp3 files into a tensorflow input pipeline.
+    AudioLoader loads a set of mp3/wav files into a tensorflow input pipeline.
     """
     def __init__(self, batch_size):
         self.batch_size = batch_size
@@ -19,52 +22,65 @@ class AudioLoader:
       return labels,next_id
 
     def create(self, directories, format='mp3', width=16384, height=30, channels=2, crop=None, sequential=None, resize=None):
-      directory = directories[0]
-      seconds=height
-      bitrate=width
+        self.datasets = []
+        directory = directories[0]
+        seconds=height
+        bitrate=width
+        for directory in directories:
+            dirs = glob.glob(directory+"/*")
+            dirs = [d for d in dirs if os.path.isdir(d)]
 
-      filenames = glob.glob(directory+"/**/*."+format)
-      num_examples_per_epoch = 10000
+            if(len(dirs) == 0):
+                dirs = [directory] 
 
+            # Create a queue that produces the filenames to read.
+            if(len(dirs) == 1):
+                # No subdirectories, use all the images in the passed in path
+                filenames = glob.glob(directory+"/*."+format)
+            else:
+                filenames = glob.glob(directory+"/**/*."+format)
 
-      filenames = tf.convert_to_tensor(filenames, dtype=tf.string)
+            filenames = natsorted(filenames)
 
-      input_queue = tf.train.slice_input_producer([filenames])
+            print("[loader] AudioLoader found", len(filenames))
+            self.file_count = len(filenames)
+            if self.file_count == 0:
+                raise ValidationException("No audio files found in '" + directory + "'")
+            filenames = tf.convert_to_tensor(filenames, dtype=tf.string)
 
-      # Read examples from files in the filename queue.
-      value = tf.read_file(input_queue[0])
-      #preprocess = tf.read_file(input_queue[0]+'.preprocess')
+            def parse_function(filename):
+                image_string = tf.read_file(filename)
+                if format == 'mp3' or format == 'wav':
+                    image = ffmpeg.decode_audio(image_string, file_format=format, samples_per_second=bitrate, channel_count=channels)
+                    image = resize_audio_with_crop_or_pad(image, seconds*bitrate*channels, 0,True)
+                else:
+                    print("[loader] Failed to load format", format)
 
-      #print("Loaded data", data)
+                image = tf.cast(image, tf.float32)
+                tf.Tensor.set_shape(image, [height*width,channels])
+                image = image/tf.reduce_max(tf.reshape(tf.abs(image),[-1]))
 
-      min_fraction_of_examples_in_queue = 0.4
-      min_queue_examples = int(num_examples_per_epoch *
-                               min_fraction_of_examples_in_queue)
+                return image
 
-      #data = tf.cast(data, tf.float32)
-      data = ffmpeg.decode_audio(value, file_format=format, samples_per_second=bitrate, channel_count=channels)
-      data = resize_audio_with_crop_or_pad(data, seconds*bitrate*channels, 0,True)
-      #data = tf.slice(data, [0,0], [seconds*bitrate, channels])
-      tf.Tensor.set_shape(data, [seconds*bitrate, channels])
-      #data = tf.minimum(data, 1)
-      #data = tf.maximum(data, -1)
-      data = data/tf.reduce_max(tf.reshape(tf.abs(data),[-1]))
-      print("DATA IS", data)
-      self.x=self._get_data(data, min_queue_examples, self.batch_size)
+            # Generate a batch of images and labels by building up a queue of examples.
+            dataset = tf.data.Dataset.from_tensor_slices(filenames)
+            if not sequential:
+                print("Shuffling data")
+                dataset = dataset.shuffle(self.file_count)
+            dataset = dataset.map(parse_function, num_parallel_calls=4)
+            dataset = dataset.batch(self.batch_size, drop_remainder=True)
 
-      self.xa = self.x
-      self.xb = self.x
+            dataset = dataset.repeat()
+            dataset = dataset.prefetch(1)
 
-      self.datasets = [self.x]
+            self.datasets.append(tf.reshape(dataset.make_one_shot_iterator().get_next(), [self.batch_size, height, width, channels]))
 
-
-    def _get_data(self, image, min_queue_examples, batch_size):
-      num_preprocess_threads = 1
-      images= tf.train.shuffle_batch(
-          [image],
-          batch_size=batch_size,
-          num_threads=num_preprocess_threads,
-          capacity= 502,
-          min_after_dequeue=128)
-      return images
+            self.xs = self.datasets
+            self.xa = self.datasets[0]
+            if len(self.datasets) > 1:
+                self.xb = self.datasets[1]
+            else:
+                self.xb = self.datasets[0]
+            self.x = self.datasets[0]
+            return self.xs
 

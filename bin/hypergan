@@ -118,7 +118,7 @@ try:
             return gan
 
         def inputs_fn():
-            if args.format == 'mp3':
+            if args.format == 'mp3' or args.format == 'wav':
                 inputs = hg.inputs.audio_loader.AudioLoader(args.batch_size)
             else:
                 inputs = hg.inputs.image_loader.ImageLoader(args.batch_size)
