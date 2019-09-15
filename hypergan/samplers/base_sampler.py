@@ -61,5 +61,12 @@ class BaseSampler:
             except Exception as e:
                 print("Warning: could not sample to ", filename, ".  Please check permissions and make sure the path exists")
                 print(e)
+
+        if len(np.shape(image)) == 2:
+            s = np.shape(image)
+            image = np.reshape(image, [s[0], s[1], 1])
+            image = np.tile(image, [1,1,3])
+
+        image = np.transpose(image, [1, 0,2])
         GlobalViewer.update(self.gan, image)
         return image

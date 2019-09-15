@@ -20,12 +20,6 @@ class ThreadedTkViewerUI:
 
     def sample(self, gan, image):
         original_image = image
-        if len(np.shape(image)) == 2:
-            s = np.shape(image)
-            image = np.reshape(image, [s[0], s[1], 1])
-            image = np.tile(image, [1,1,3])
-        image = np.transpose(image, [1, 0,2])
-
         self.size = [int(image.shape[0] * self.viewer_size), int(image.shape[1] * self.viewer_size)]
 
         def _refresh_sample(*args):
@@ -88,7 +82,7 @@ class ThreadedTkViewerUI:
             self.tk = tk
             self.surface = self.pg.Surface([image.shape[0],image.shape[1]])
             root = tk.Tk(className=self.title)
-            self.resizable_frame = ResizableFrame(root, width=self.size[0], height=self.size[1], tkviewer=self, surface=self.surface)
+            self.resizable_frame = ResizableFrame(root, width=1024, height=1024, tkviewer=self, surface=self.surface)
             root.rowconfigure(0,weight=1)
             root.rowconfigure(1,weight=1)
             root.columnconfigure(0,weight=1)

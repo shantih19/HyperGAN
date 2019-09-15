@@ -50,15 +50,15 @@ class AudioLoader:
 
             def parse_function(filename):
                 image_string = tf.read_file(filename)
-                if format == 'mp3' or format == 'wav':
-                    image = ffmpeg.decode_audio(image_string, file_format=format, samples_per_second=bitrate, channel_count=channels)
-                    image = resize_audio_with_crop_or_pad(image, seconds*bitrate*channels, 0,True)
-                else:
-                    print("[loader] Failed to load format", format)
+                #if format == 'mp3' or format == 'wav':
+                #    image = ffmpeg.decode_audio(image_string, file_format=format, samples_per_second=bitrate, channel_count=channels)
+                #    image = resize_audio_with_crop_or_pad(image, seconds*bitrate*channels, 0,True)
+                #else:
+                #    print("[loader] Failed to load format", format)
 
+                image = tf.zeros([height*width, channels])
                 image = tf.cast(image, tf.float32)
-                tf.Tensor.set_shape(image, [height*width,channels])
-                image = image/tf.reduce_max(tf.reshape(tf.abs(image),[-1]))
+                #tf.Tensor.set_shape(image, [height*width,channels])
 
                 return image
 
@@ -73,7 +73,7 @@ class AudioLoader:
             dataset = dataset.repeat()
             dataset = dataset.prefetch(1)
 
-            self.datasets.append(tf.reshape(dataset.make_one_shot_iterator().get_next(), [self.batch_size, height, width, channels]))
+            self.datasets.append(tf.reshape(dataset.make_one_shot_iterator().get_next(), [self.batch_size, height*width, channels]))
 
             self.xs = self.datasets
             self.xa = self.datasets[0]

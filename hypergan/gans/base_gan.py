@@ -16,6 +16,7 @@ from tensorflow.python.tools import freeze_graph
 from tensorflow.python.tools import optimize_for_inference_lib
 from tensorflow.python.framework.errors_impl import FailedPreconditionError 
 
+from hypergan.samplers.audio_sampler import AudioSampler
 from hypergan.samplers.static_batch_sampler import StaticBatchSampler
 from hypergan.samplers.progressive_sampler import ProgressiveSampler
 from hypergan.samplers.batch_sampler import BatchSampler
@@ -462,6 +463,7 @@ class BaseGAN(GANComponent):
                 'y': YSampler,
                 'segment': SegmentSampler,
                 'style': StyleSampler,
+                'audio': AudioSampler,
                 'aligned': AlignedSampler
             }
     def train_hooks(self):
