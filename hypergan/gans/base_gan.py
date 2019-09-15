@@ -30,6 +30,7 @@ from hypergan.samplers.style_walk_sampler import StyleWalkSampler
 from hypergan.samplers.alphagan_random_walk_sampler import AlphaganRandomWalkSampler
 from hypergan.samplers.debug_sampler import DebugSampler
 from hypergan.samplers.segment_sampler import SegmentSampler
+from hypergan.samplers.style_sampler import StyleSampler
 from hypergan.samplers.y_sampler import YSampler
 from hypergan.samplers.gang_sampler import GangSampler
 
@@ -460,6 +461,7 @@ class BaseGAN(GANComponent):
                 'debug': DebugSampler,
                 'y': YSampler,
                 'segment': SegmentSampler,
+                'style': StyleSampler,
                 'aligned': AlignedSampler
             }
     def train_hooks(self):

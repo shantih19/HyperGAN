@@ -118,7 +118,10 @@ try:
             return gan
 
         def inputs_fn():
-            inputs = hg.inputs.image_loader.ImageLoader(args.batch_size)
+            if args.format == 'mp3':
+                inputs = hg.inputs.audio_loader.AudioLoader(args.batch_size)
+            else:
+                inputs = hg.inputs.image_loader.ImageLoader(args.batch_size)
             directories = [args.directory]
             if args.align:
                 directories+=args.align.split(" ")

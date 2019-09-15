@@ -1,3 +1,4 @@
+import tensorflow as tf
 
 # coding: utf-8
 
@@ -262,7 +263,7 @@ def _ImageDimensions(images, dynamic_shape=False):
   # should make it simpler to switch dimensions in the future (e.g. if we ever
   # want to switch height and width.)
   if dynamic_shape:
-    return array_ops.unpack(array_ops.shape(images))
+    return array_ops.unpack(array_ops.shape(images), num=2)
   else:
     return images.get_shape().as_list()
 
