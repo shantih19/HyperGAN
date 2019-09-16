@@ -47,59 +47,72 @@ class AlignedGAN(BaseGAN):
         with tf.device(self.device):
             def random_like(x):
                 return UniformDistribution(self, config.latent, output_shape=self.ops.shape(x)).sample
-            self.latent = self.create_component(config.latent, name='forcerandom_discriminator')
+            self.latent = self.create_component(config.latent, name='latent')
 
 
-            zgb = self.create_component(config.encoder, input=self.inputs.xa, name='xa_to_zb')
-            zb = zgb.sample
-            gb = self.create_component(config.generator, input=zb, name='b_generator')
+            zgb = self.create_component(config.encoder, input=self.inputs.xb, name='encoder_b')
+            zga = self.create_component(config.encoder, input=self.inputs.xa, name='encoder_a')
+
             self.zgb = zgb
-
-            random_gb = self.create_component(config.generator, input=zb, name='b_generator', reuse=True)
-
-            zga = self.create_component(config.encoder, input=self.inputs.xb, name='xb_to_za')
-            za = zga.sample
-            ga = self.create_component(config.generator, input=za, name='a_generator')
             self.zga = zga
 
-            random_ga = self.create_component(config.generator, input=zb, name='a_generator', reuse=True)
+            rzb = random_like(zgb.sample)
 
-            self.ga = ga
-            self.gb = gb
+            if config.u_to_z:
+                uza = self.create_component(config.u_to_z, input=self.latent.sample, name='uza')
+                uzb = self.create_component(config.u_to_z, input=self.latent.sample, name='uzb')
+                g_ab = self.create_component(config.generator, input=zga.sample, name='b_generator', reuse=False, context={"input": self.inputs.xa, "uz": uza.sample})
+                g_ba = self.create_component(config.generator, input=zgb.sample, name='a_generator', reuse=False, context={"input": self.inputs.xb, "uz": uzb.sample})
+            else:
+                g_ab = self.create_component(config.generator, input=zga.sample, name='b_generator', reuse=False, context={"input": self.inputs.xa})
+                g_ba = self.create_component(config.generator, input=zgb.sample, name='a_generator', reuse=False, context={"input": self.inputs.xb})
 
-            re_zb = self.create_component(config.encoder, input=ga.sample, name='xa_to_zb', reuse=True)
-            re_za = self.create_component(config.encoder, input=gb.sample, name='xb_to_za', reuse=True)
+                random_gb = self.create_component(config.generator, input=rzb, name='b_generator', reuse=True)
+                random_ga = self.create_component(config.generator, input=random_like(self.zga.sample), name='a_generator', reuse=True)
+
+            ga = g_ba
+            gb = g_ab
+
+            xa_hat = g_ab.sample
+            xb_hat = g_ba.sample
+
+            re_za = self.create_component(config.encoder, input=g_ba.sample, name='encoder_a', reuse=True)
+            re_zb = self.create_component(config.encoder, input=g_ab.sample, name='encoder_b', reuse=True)
+            self.ga = g_ba
+            self.gb = g_ab
 
             self.uniform_sample = gb.sample
 
             xba = ga.sample
             xab = gb.sample
-            xa_hat = ga.reuse(re_za.sample)
-            xb_hat = gb.reuse(re_zb.sample)
             xa = self.inputs.xa
             xb = self.inputs.xb
 
+
             t0 = xb
-            t1 = random_gb.sample
-            f0 = za
-            f1 = zb
+            t1 = g_ab.sample
+            f0 = zgb.sample
+            f0 =zgb.sample
+            self.f0 = f0
+            f1 = zga.sample
+            self.f1 = f1
             stack = [t0, t1]
             stacked = ops.concat(stack, axis=0)
             features = ops.concat([f0, f1], axis=0)
             self.features = features
             ugb = gb.sample
-            zub = zb
-            sourcezub = zb
+            zub = zgb.sample
+            sourcezub = zgb.sample
 
             skip_connections = []
-            if config.skip_connections:
-                for (a,b) in zip(zga.layers,zgb.layers):
-                    layer = tf.concat([a,b],axis=0)
-                    skip_connections += [layer]
-
+            for (a,b) in zip(zga.layers,zgb.layers):
+                layer = tf.concat([a,b],axis=0)
+                skip_connections += [layer]
             d = self.create_component(config.discriminator, name='d_ab', 
                     skip_connections=skip_connections,
                     input=stacked, features=[features])
+
+            self.skip_connections = skip_connections
             self.discriminator = d
             l = self.create_loss(config.loss, d, self.inputs.xa, ga.sample, len(stack))
             self.loss = l
@@ -111,8 +124,13 @@ class AlignedGAN(BaseGAN):
             g_loss1 = l.g_loss
 
             d_vars1 = d.variables()
-            g_vars1 = gb.variables()+zga.variables()
-            self.generator = gb
+            g_vars1 = gb.variables()+zga.variables()+zgb.variables()
+
+            if config.u_to_z:
+                g_vars1 += uza.variables()
+            if config.random_g is not None:
+                zgb.variables()
+            self.generator = g_ab
 
             d_loss = l.d_loss
             g_loss = l.g_loss
@@ -125,9 +143,9 @@ class AlignedGAN(BaseGAN):
 
             if config.mirror_joint:
                 t0 = xa
-                t1 = random_ga.sample
+                t1 = ga.sample
                 f0 = zb
-                f1 = za
+                f1 = rzab.sample
                 stack = [t0, t1]
                 stacked = ops.concat(stack, axis=0)
                 features = ops.concat([f0, f1], axis=0)
@@ -157,17 +175,15 @@ class AlignedGAN(BaseGAN):
                 'sample': [d_loss1, g_loss1],
                 'metrics': metrics
                 })
-            print("g_vars1", g_vars1)
             trainer = self.create_component(config.trainer)
 
             self.initialize_variables()
 
         self.trainer = trainer
-        self.generator = gb
-        self.encoder = hc.Config({"sample":ugb}) # this is the other gan
-        self.uniform_distribution = hc.Config({"sample":zub})#uniform_encoder
-        self.uniform_distribution_source = hc.Config({"sample":sourcezub})#uniform_encoder
-        self.zb = zb
+        self.encoder = hc.Config({"sample":ugb})
+        self.uniform_distribution = hc.Config({"sample":zub})
+        self.uniform_distribution_source = hc.Config({"sample":sourcezub})
+        self.zb = zgb.sample
         self.z_hat = gb.sample
         self.x_input = self.inputs.xa
         self.autoencoded_x = xb_hat
@@ -178,9 +194,6 @@ class AlignedGAN(BaseGAN):
         self.xab = xab
         self.uga = ugb
         self.ugb = ugb
-
-        rgb = tf.cast((self.generator.sample+1)*127.5, tf.int32)
-        self.generator_int = tf.bitwise.bitwise_or(rgb, 0xFF000000, name='generator_int')
 
     def d_vars(self):
         return self._d_vars
