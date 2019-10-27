@@ -226,9 +226,10 @@ class ConfigurableComponent:
 
 
         for sk in self.skip_connections:
+            print("SK", sk)
             if len(ops.shape(sk)) == len(ops.shape(net)) and ops.shape(sk)[1] == ops.shape(net)[1]:
 
-                net = tf.concat([net, sk], axis=3)
+                net = tf.concat([net, sk], axis=len(self.ops.shape(net))-1)
 
         if op == ops.conv2d:
             net = ops.conv2d(net, fltr[0], fltr[1], stride[0], stride[1], channels, initializer=initializer, name=name, trainable=trainable)

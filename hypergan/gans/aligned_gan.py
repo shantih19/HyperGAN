@@ -50,25 +50,20 @@ class AlignedGAN(BaseGAN):
             self.latent = self.create_component(config.latent, name='latent')
 
 
-            zgb = self.create_component(config.encoder, input=self.inputs.xb, name='encoder_b')
+            #zgb = self.create_component(config.encoder, input=self.inputs.xb, name='encoder_b')
             zga = self.create_component(config.encoder, input=self.inputs.xa, name='encoder_a')
+            zgb = self.create_component(config.bridge, input=zga.sample, name='encoder_b')
 
             self.zgb = zgb
             self.zga = zga
 
             rzb = random_like(zgb.sample)
 
-            if config.u_to_z:
-                uza = self.create_component(config.u_to_z, input=self.latent.sample, name='uza')
-                uzb = self.create_component(config.u_to_z, input=self.latent.sample, name='uzb')
-                g_ab = self.create_component(config.generator, input=zga.sample, name='b_generator', reuse=False, context={"input": self.inputs.xa, "uz": uza.sample})
-                g_ba = self.create_component(config.generator, input=zgb.sample, name='a_generator', reuse=False, context={"input": self.inputs.xb, "uz": uzb.sample})
-            else:
-                g_ab = self.create_component(config.generator, input=zga.sample, name='b_generator', reuse=False, context={"input": self.inputs.xa})
-                g_ba = self.create_component(config.generator, input=zgb.sample, name='a_generator', reuse=False, context={"input": self.inputs.xb})
+            g_ab = self.create_component(config.generator, input=zga.sample, name='b_generator', reuse=False, context={"input": self.inputs.xa})
+            g_ba = self.create_component(config.generator, input=zgb.sample, name='a_generator', reuse=False, context={"input": self.inputs.xb})
 
-                random_gb = self.create_component(config.generator, input=rzb, name='b_generator', reuse=True)
-                random_ga = self.create_component(config.generator, input=random_like(self.zga.sample), name='a_generator', reuse=True)
+            random_gb = self.create_component(config.generator, input=rzb, name='b_generator', reuse=True)
+            random_ga = self.create_component(config.generator, input=random_like(self.zga.sample), name='a_generator', reuse=True)
 
             ga = g_ba
             gb = g_ab
@@ -76,8 +71,6 @@ class AlignedGAN(BaseGAN):
             xa_hat = g_ab.sample
             xb_hat = g_ba.sample
 
-            re_za = self.create_component(config.encoder, input=g_ba.sample, name='encoder_a', reuse=True)
-            re_zb = self.create_component(config.encoder, input=g_ab.sample, name='encoder_b', reuse=True)
             self.ga = g_ba
             self.gb = g_ab
 
@@ -91,10 +84,9 @@ class AlignedGAN(BaseGAN):
 
             t0 = xb
             t1 = g_ab.sample
-            f0 = zgb.sample
-            f0 =zgb.sample
+            f0 = zga.sample
             self.f0 = f0
-            f1 = zga.sample
+            f1 = zgb.sample
             self.f1 = f1
             stack = [t0, t1]
             stacked = ops.concat(stack, axis=0)
@@ -105,9 +97,6 @@ class AlignedGAN(BaseGAN):
             sourcezub = zgb.sample
 
             skip_connections = []
-            for (a,b) in zip(zga.layers,zgb.layers):
-                layer = tf.concat([a,b],axis=0)
-                skip_connections += [layer]
             d = self.create_component(config.discriminator, name='d_ab', 
                     skip_connections=skip_connections,
                     input=stacked, features=[features])
@@ -126,10 +115,6 @@ class AlignedGAN(BaseGAN):
             d_vars1 = d.variables()
             g_vars1 = gb.variables()+zga.variables()+zgb.variables()
 
-            if config.u_to_z:
-                g_vars1 += uza.variables()
-            if config.random_g is not None:
-                zgb.variables()
             self.generator = g_ab
 
             d_loss = l.d_loss
@@ -141,31 +126,6 @@ class AlignedGAN(BaseGAN):
                     'd_loss': l.d_loss
                 }
 
-            if config.mirror_joint:
-                t0 = xa
-                t1 = ga.sample
-                f0 = zb
-                f1 = rzab.sample
-                stack = [t0, t1]
-                stacked = ops.concat(stack, axis=0)
-                features = ops.concat([f0, f1], axis=0)
-                uga = ga.sample
-                zua = za
-                z_d = self.create_component(config.discriminator, name='d_ba', input=stacked, features=[features])
-                loss3 = self.create_component(config.loss, discriminator = z_d, split=2)
-                self.losses.append(loss3)
-                self.gan.add_metric("ba_gloss",loss3.g_loss)
-                self.gan.add_metric("ba_dloss",loss3.d_loss)
-                d_loss1 += loss3.d_loss
-                g_loss1 += loss3.g_loss
-                d_vars1 += z_d.variables()
-                g_vars1 += ga.variables()
-                g_vars1 += zgb.variables()
-                self.al = loss1
-                self.bl = loss3
-                self.bd = z_d
-                self.ad = d
-
             self._g_vars = g_vars1
             self._d_vars = d_vars1
 
@@ -175,7 +135,10 @@ class AlignedGAN(BaseGAN):
                 'sample': [d_loss1, g_loss1],
                 'metrics': metrics
                 })
-            trainer = self.create_component(config.trainer)
+            if self.method == "sample":
+                trainer = None
+            else:
+                trainer = self.create_component(config.trainer)
 
             self.initialize_variables()
 

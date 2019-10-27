@@ -35,7 +35,7 @@ from hypergan.samplers.gang_sampler import GangSampler
 
 class BaseGAN(GANComponent):
     def __init__(self, config=None, inputs=None, device='/gpu:0', ops_config=None, ops_backend=TensorflowOps, graph=None,
-            batch_size=None, width=None, height=None, channels=None, debug=None, session=None, name="hypergan", distribution_strategy=None, reuse=False):
+            batch_size=None, width=None, height=None, channels=None, debug=None, session=None, name="hypergan", distribution_strategy=None, reuse=False, method="any"):
         """ Initialized a new GAN."""
         self.inputs = inputs
         self.device = device
@@ -53,6 +53,7 @@ class BaseGAN(GANComponent):
         self.distribution_strategy = distribution_strategy
         self.skip_connections = SkipConnections()
         self.destroy = False
+        self.method = method
         if graph is None:
             graph = tf.compat.v1.get_default_graph()
         self.graph = graph
