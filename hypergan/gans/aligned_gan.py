@@ -52,7 +52,7 @@ class AlignedGAN(BaseGAN):
 
             #zgb = self.create_component(config.encoder, input=self.inputs.xb, name='encoder_b')
             zga = self.create_component(config.encoder, input=self.inputs.xa, name='encoder_a')
-            zgb = self.create_component(config.bridge, input=zga.sample, name='encoder_b')
+            zgb = self.create_component(config.encoder, input=self.inputs.xb, name='encoder_b')
 
             self.zgb = zgb
             self.zga = zga
@@ -84,10 +84,11 @@ class AlignedGAN(BaseGAN):
 
             t0 = xb
             t1 = g_ab.sample
-            f0 = zga.sample
-            self.f0 = f0
-            f1 = zgb.sample
+            f0 = zgb.sample
+            f1 = zga.sample
+
             self.f1 = f1
+            self.f0 = f0
             stack = [t0, t1]
             stacked = ops.concat(stack, axis=0)
             features = ops.concat([f0, f1], axis=0)
