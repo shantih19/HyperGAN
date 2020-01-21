@@ -259,7 +259,7 @@ class CLI:
             self.train_tpu()
             return
 
-        while((i < self.total_steps or self.total_steps == -1) and not self.gan.destroy):
+        while((i < self.total_steps or self.total_steps == -1) and not self.gan_fn.gan.destroy):
             i+=1
             start_time = time.time()
             self.step()
