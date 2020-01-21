@@ -271,9 +271,9 @@ class CLI:
                 print(" |= Saving network")
                 self.gan.save(self.save_file)   
                 self.create_path(self.advSavePath+'advSave.txt')
-                    with open(self.advSavePath+'advSave.txt', 'w') as the_file:
-                        the_file.write(str(self.steps)+"\n")
-                        the_file.write(str(self.samples)+"\n")
+                with open(self.advSavePath+'advSave.txt', 'w') as the_file:
+                    the_file.write(str(self.steps)+"\n")
+                    the_file.write(str(self.samples)+"\n")
             if self.args.ipython:
                 self.check_stdin()
             end_time = time.time()
