@@ -32,7 +32,7 @@ class CLI:
         self.gan_fn = gan_fn
         self.gan_config = gan_config
         self.inputs_fn = inputs_fn
-
+        self.gan = gan_fn(gan_config)
         args = hc.Config(args)
         self.args = args
 
