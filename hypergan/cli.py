@@ -71,7 +71,6 @@ class CLI:
             viewer_size = self.args.viewer_size,
             enabled = self.args.viewer,
             zoom = self.args.zoom)
-        self.gan = self.gan_fn(self.config_name, None)
 
     def sample(self, allow_save=True):
         """ Samples to a file.  Useful for visualizing the learning process.
