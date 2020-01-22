@@ -32,7 +32,7 @@ class CLI:
         self.gan_fn = gan_fn
         self.gan_config = gan_config
         self.inputs_fn = inputs_fn
-        self.gan = gan_fn(gan_config)
+        self.gan = gan_fn(gan_config,None)
         args = hc.Config(args)
         self.args = args
 
@@ -261,7 +261,7 @@ class CLI:
             self.train_tpu()
             return
 
-        while ((i < self.total_steps or self.total_steps == -1) and not self.gan_fn().destroy):
+        while ((i < self.total_steps or self.total_steps == -1) and not self.gan.destroy):
             i += 1
             start_time = time.time()
             self.step()
