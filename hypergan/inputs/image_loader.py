@@ -66,7 +66,7 @@ class ImageLoader:
         self.dataset = dataset
         return dataset
 
-
+    @tf.function
     def create(self, directory, channels=3, format='jpg', width=64, height=64, crop=False, resize=False, sequential=False):
         if format == 'tfrecord':
             return self.tfrecord_create(directory, channels=channels, width=width, height=height, crop=crop, resize=resize, sequential=sequential)
