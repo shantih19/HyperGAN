@@ -187,7 +187,7 @@ class CLI:
 
     def train_tpu(self):
         i = 0
-        tpu_name = self.args.device.split(":")[1]
+        tpu_name = 'grpc://' + os.environ['COLAB_TPU_ADDR']
         cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu=tpu_name)
 
         config = tf.compat.v1.estimator.tpu.RunConfig(
@@ -315,7 +315,7 @@ class CLI:
 
     def run(self):
         if self.method == 'train':
-            self.train()
+            self.train_tpu()
         elif self.method == 'build':
             if not self.gan.load(self.save_file):
                 raise ValidationException("Could not load model: " + self.save_file)
