@@ -216,7 +216,7 @@ class CLI:
             features = tf.parse_example(serialized_tf_example, spec)
             return tf.estimator.export.ServingInputReceiver(features, receiver_tensors)
 
-        self.gan = self.gan_fn(self.gan_config, self.inputs_fn(self.args.batch_size))
+        self.gan = self.gan_fn(self.gan_config, self.inputs_fn(self.args.batch_size), reuse=tf.AUTO_REUSE)
         est = self.gan.tpu_gan_estimator(config)
 
         config = tf.ConfigProto()
