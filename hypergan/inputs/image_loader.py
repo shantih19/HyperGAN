@@ -66,7 +66,6 @@ class ImageLoader:
         self.dataset = dataset
         return dataset
 
-    @tf.function
     def create(self, directory, channels=3, format='jpg', width=64, height=64, crop=False, resize=False, sequential=False):
         if format == 'tfrecord':
             return self.tfrecord_create(directory, channels=channels, width=width, height=height, crop=crop, resize=resize, sequential=sequential)
@@ -91,15 +90,34 @@ class ImageLoader:
             raise ValidationException("No images found in '" + directory + "'")
         filenames = tf.convert_to_tensor(filenames, dtype=tf.string)
 
+        def parse_function(filename):
+            image_string = tf.read_file(filename)
+            if format == 'jpg':
+                image = tf.image.decode_jpeg(image_string, channels=channels)
+            elif format == 'png':
+                image = tf.image.decode_png(image_string, channels=channels)
+            else:
+                print("[loader] Failed to load format", format)
+            image = tf.cast(image, tf.float32)
+            # Image processing for evaluation.
+            # Crop the central [height, width] of the image.
+            if crop:
+                image = hypergan.inputs.resize_image_patch.resize_image_with_crop_or_pad(image, height, width, dynamic_shape=True)
+            elif resize:
+                image = tf.image.resize(image, [height, width], 1)
+
+            image = image / 127.5 - 1.
+            tf.Tensor.set_shape(image, [height,width,channels])
+
+            return image
 
         # Generate a batch of images and labels by building up a queue of examples.
-        dataset = tf.data.Dataset.from_tensor_slices([])
+        dataset = tf.data.Dataset.from_tensor_slices(filenames)
         if not sequential:
             print("Shuffling data")
             dataset = dataset.shuffle(self.file_count)
-        for filen in filenames:
-            dataset = dataset.concatenate(parse_function(filen))
-        dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(self.batch_size))
+        dataset = dataset.map(parse_function, num_parallel_calls=4)
+        dataset = dataset.batch(self.batch_size, drop_remainder=True)
         dataset = dataset.repeat()
         dataset = dataset.prefetch(1)
 

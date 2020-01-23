@@ -10,6 +10,8 @@ from hypergan.ops.tensorflow import layer_regularizers
 from hypergan.ops.tensorflow.activations import lrelu, selu
 from hypergan.ops.tensorflow.extended_ops import *
 from hypergan.ops.tensorflow.sn import spectral_normed_weight
+
+
 class TensorflowOps:
     def __init__(self, config={}, device="/gpu:0"):
         config = hc.Config(config)
@@ -69,6 +71,7 @@ class TensorflowOps:
     def random_initializer(self, stddev):
         def _build(shape):
             return tf.random_normal_initializer(0, stddev, dtype=self.dtype)
+
         return _build
 
     def stylegan_initializer(self, config):
@@ -76,8 +79,8 @@ class TensorflowOps:
             gain = self.config_option("gain", np.sqrt(2), config)
             use_wscale = self.config_option("w_scale", False, config)
             lrmul = float(self.config_option("lrmul", 0.01, config))
-            fan_in = np.prod([int(x) for x in shape[:-1]]) # [kernel, kernel, fmaps_in, fmaps_out] or [in, out]
-            he_std = gain / np.sqrt(fan_in) # He init
+            fan_in = np.prod([int(x) for x in shape[:-1]])  # [kernel, kernel, fmaps_in, fmaps_out] or [in, out]
+            he_std = gain / np.sqrt(fan_in)  # He init
 
             # Equalized learning rate and custom learning rate multiplier.
             if use_wscale:
@@ -91,21 +94,25 @@ class TensorflowOps:
 
             # Create variable.
             return tf.initializers.random_normal(0, init_std)
+
         return _build
 
     def orthogonal_initializer(self, gain):
         def _build(shape):
             return tf.orthogonal_initializer(gain)
+
         return _build
 
     def he_normal_initializer(self):
         def _build(shape):
             return tf.variance_scaling_initializer()
+
         return _build
 
     def xavier_initializer(self):
         def _build(shape):
             return tf.contrib.layers.xavier_initializer()
+
         return _build
 
     def describe(self, description):
@@ -144,7 +151,7 @@ class TensorflowOps:
         elif dtype == 'float16':
             return tf.float16
         else:
-            raise Exception("dtype not defined: "+str(dtype))
+            raise Exception("dtype not defined: " + str(dtype))
 
     def get_weight(self, shape=None, name=None, initializer=None, trainable=None):
         if name == None:
@@ -153,28 +160,28 @@ class TensorflowOps:
             initializer = self.initializer
         initializer = initializer(shape)
         weight = tf.get_variable(name, shape, dtype=self.dtype, initializer=initializer, trainable=trainable)
-        self.weights.append(weight)
-        self.weights = list(set(self.weights))
+        if not self._reuse:
+            self.weights.append(weight)
         if hasattr(self, 'runtime_coef'):
-            weight = weight * self.runtime_coef
-            delattr(self, "runtime_coef") # todo, better way to pass variables from initialiszer
+            weight *= self.runtime_coef
+            delattr(self, "runtime_coef")  # todo, better way to pass variables from initialiszer
         return weight
 
     def get_bias(self, shape, constant=0.0, name=None, trainable=None):
         if name == None:
-            name='b'
+            name = 'b'
         bias = tf.get_variable(name, shape, initializer=tf.constant_initializer(constant, dtype=self.dtype), dtype=self.dtype, trainable=trainable)
-        self.biases.append(bias)
-        self.biases = list(set(self.biases))
+        if not self._reuse:
+            self.biases.append(bias)
         return bias
-    
+
     def parse_dtype(self, dtype):
         if dtype == 'float32':
             return tf.float32
         elif dtype == 'float16':
             return tf.float16
         else:
-            raise Exception("dtype not defined: "+str(dtype))
+            raise Exception("dtype not defined: " + str(dtype))
 
     def cosine_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim):
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
@@ -184,7 +191,7 @@ class TensorflowOps:
             conv = tf.nn.bias_add(conv, biases)
 
             w_square = tf.square(w)
-            #w_sum = tf.reduce_sum(w_square, [0,1,2])
+            # w_sum = tf.reduce_sum(w_square, [0,1,2])
             w_conv = tf.nn.conv2d(tf.ones_like(net), w_square, strides=[1, 1, 1, 1], padding='SAME')
             w_norm = tf.sqrt(w_conv + 1e-4)
 
@@ -195,7 +202,7 @@ class TensorflowOps:
 
             return conv / (w_norm * net_norm)
 
-    #def weightnorm_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim):
+    # def weightnorm_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim):
     #    with tf.variable_scope(self.generate_name(), reuse=self._reuse):
     #        w = self.get_weight([filter_h, filter_w, net.get_shape()[-1], output_dim])
     #        g = self.get_weight(name='g', shape=[1,output_dim])
@@ -209,7 +216,7 @@ class TensorflowOps:
 
     #        return (conv*g+b) / (w_norm)
 
-    #def weightnorm_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim):
+    # def weightnorm_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim):
     #    with tf.variable_scope(self.generate_name(), reuse=self._reuse):
     #        w = self.get_weight([filter_h, filter_w, net.get_shape()[-1], output_dim])
     #        g = self.get_weight(name='g', shape=[1,output_dim])
@@ -225,70 +232,73 @@ class TensorflowOps:
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
             # modified from https://github.com/openai/weightnorm/blob/master/tensorflow/nn.py
             # data based initialization of parameters
-            g = self.get_weight(name='g', shape=[1,1,1,output_dim])#, initializer=scale_init)
-            b = self.get_bias(shape=[output_dim])#, initializer=-m_init*scale_init)
-            shape = [filter_h, filter_w, int(net.get_shape()[-1]),output_dim]
+            g = self.get_weight(name='g', shape=[1, 1, 1, output_dim])  # , initializer=scale_init)
+            b = self.get_bias(shape=[output_dim])  # , initializer=-m_init*scale_init)
+            shape = [filter_h, filter_w, int(net.get_shape()[-1]), output_dim]
             V = self.get_weight(name='v', shape=shape)
-            V_norm = tf.nn.l2_normalize(V, [0,1,2])
+            V_norm = tf.nn.l2_normalize(V, [0, 1, 2])
             x_init = tf.nn.conv2d(net, V_norm, [1, stride_h, stride_w, 1], padding="SAME")
             x_init = tf.nn.bias_add(x_init, b)
-            m_init, v_init = tf.nn.moments(x_init, [0,1,2])
-            scale_init = 1.0/tf.sqrt(v_init + 1e-8)
-            x_init = tf.reshape(scale_init,[1,1,1,output_dim])*(x_init-tf.reshape(m_init,[1,1,1,output_dim]))
-            return g*x_init
+            m_init, v_init = tf.nn.moments(x_init, [0, 1, 2])
+            scale_init = 1.0 / tf.sqrt(v_init + 1e-8)
+            x_init = tf.reshape(scale_init, [1, 1, 1, output_dim]) * (
+                        x_init - tf.reshape(m_init, [1, 1, 1, output_dim]))
+            return g * x_init
 
     def weightnorm2_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim, padding="SAME"):
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
             # modified from https://github.com/openai/weightnorm/blob/master/tensorflow/nn.py
             # data based initialization of parameters
-            g = self.get_weight(name='g', shape=[1,1,1,output_dim])#, initializer=scale_init)
-            shape = [filter_h, filter_w, int(net.get_shape()[-1]),output_dim]
+            g = self.get_weight(name='g', shape=[1, 1, 1, output_dim])  # , initializer=scale_init)
+            shape = [filter_h, filter_w, int(net.get_shape()[-1]), output_dim]
             V = self.get_weight(name='v', shape=shape)
-            V_norm = tf.nn.l2_normalize(V, [0,1,2])
+            V_norm = tf.nn.l2_normalize(V, [0, 1, 2])
             x_init = tf.nn.conv2d(net, V_norm, [1, stride_h, stride_w, 1], padding=padding)
-            m_init, v_init = tf.nn.moments(x_init, [0,1,2])
-            scale_init = 1.0/tf.sqrt(v_init + 1e-8)
-            x_init = tf.reshape(scale_init,[1,1,1,output_dim])*(x_init-tf.reshape(m_init,[1,1,1,output_dim]))
-            return g*x_init
+            m_init, v_init = tf.nn.moments(x_init, [0, 1, 2])
+            scale_init = 1.0 / tf.sqrt(v_init + 1e-8)
+            x_init = tf.reshape(scale_init, [1, 1, 1, output_dim]) * (
+                        x_init - tf.reshape(m_init, [1, 1, 1, output_dim]))
+            return g * x_init
 
     def weightnorm3_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim):
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
             # modified from https://github.com/openai/weightnorm/blob/master/tensorflow/nn.py
             # data based initialization of parameters
-            g = self.get_weight(name='g', shape=[1,1,1,output_dim])#, initializer=scale_init)
-            shape = [filter_h, filter_w, int(net.get_shape()[-1]),output_dim]
+            g = self.get_weight(name='g', shape=[1, 1, 1, output_dim])  # , initializer=scale_init)
+            shape = [filter_h, filter_w, int(net.get_shape()[-1]), output_dim]
             V = self.get_weight(name='v', shape=shape)
-            V_norm = tf.nn.l2_normalize(V, [0,1,2])*g
+            V_norm = tf.nn.l2_normalize(V, [0, 1, 2]) * g
             x_init = tf.nn.conv2d(net, V_norm, [1, stride_h, stride_w, 1], padding="SAME")
-            m_init, v_init = tf.nn.moments(x_init, [0,1,2])
-            scale_init = 1.0/tf.sqrt(v_init + 1e-8)
-            x_init = tf.reshape(scale_init,[1,1,1,output_dim])*(x_init-tf.reshape(m_init,[1,1,1,output_dim]))
+            m_init, v_init = tf.nn.moments(x_init, [0, 1, 2])
+            scale_init = 1.0 / tf.sqrt(v_init + 1e-8)
+            x_init = tf.reshape(scale_init, [1, 1, 1, output_dim]) * (
+                        x_init - tf.reshape(m_init, [1, 1, 1, output_dim]))
             return x_init
-
 
     def spectralnorm_conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim, padding='SAME'):
         def spectral_norm(w, iteration=1):
-           w_shape = w.shape.as_list()
-           w = tf.reshape(w, [-1, w_shape[-1]])
+            w_shape = w.shape.as_list()
+            w = tf.reshape(w, [-1, w_shape[-1]])
 
-           u = tf.get_variable("u", [1, w_shape[-1]], initializer=tf.truncated_normal_initializer(), trainable=False)
+            u = tf.get_variable("u", [1, w_shape[-1]], initializer=tf.truncated_normal_initializer(), trainable=False)
 
-           u_hat = u
-           v_hat = None
-           for i in range(iteration):
-               v_ = tf.matmul(u_hat, tf.transpose(w))
-               v_hat =tf.nn.l2_normalize(v_, [0,1])
+            u_hat = u
+            v_hat = None
+            for i in range(iteration):
+                v_ = tf.matmul(u_hat, tf.transpose(w))
+                v_hat = tf.nn.l2_normalize(v_, [0, 1])
 
-               u_ = tf.matmul(v_hat, w)
-               u_hat =tf.nn.l2_normalize(u_, [0,1])
+                u_ = tf.matmul(v_hat, w)
+                u_hat = tf.nn.l2_normalize(u_, [0, 1])
 
-           sigma = tf.matmul(tf.matmul(v_hat, w), tf.transpose(u_hat))
-           w_norm = w / sigma
+            sigma = tf.matmul(tf.matmul(v_hat, w), tf.transpose(u_hat))
+            w_norm = w / sigma
 
-           with tf.control_dependencies([u.assign(u_hat)]):
-               w_norm = tf.reshape(w_norm, w_shape)
+            with tf.control_dependencies([u.assign(u_hat)]):
+                w_norm = tf.reshape(w_norm, w_shape)
 
-           return w_norm
+            return w_norm
+
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
             w = self.get_weight([filter_h, filter_w, net.get_shape()[-1], output_dim])
             conv = tf.nn.conv2d(net, strides=[1, stride_h, stride_w, 1], padding=padding, filter=spectral_norm(w))
@@ -300,26 +310,26 @@ class TensorflowOps:
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
             # modified from https://github.com/openai/weightnorm/blob/master/tensorflow/nn.py
             # data based initialization of parameters
-            g = self.get_weight(name='g', shape=[1,1,1,output_dim])#, initializer=scale_init)
-            b = self.get_bias(shape=[output_dim])#, initializer=-m_init*scale_init)
+            g = self.get_weight(name='g', shape=[1, 1, 1, output_dim])  # , initializer=scale_init)
+            b = self.get_bias(shape=[output_dim])  # , initializer=-m_init*scale_init)
             shape = [filter_h, filter_w, output_dim, int(net.get_shape()[-1])]
             V = self.get_weight(name='v', shape=shape)
-            V_norm = tf.nn.l2_normalize(V, [0,1,2])
-            
+            V_norm = tf.nn.l2_normalize(V, [0, 1, 2])
+
             net_shape = self.shape(net)
-            target_shape = [net_shape[0], net_shape[1]*stride_h, net_shape[2]*stride_w, output_dim]
+            target_shape = [net_shape[0], net_shape[1] * stride_h, net_shape[2] * stride_w, output_dim]
             print(net, target_shape, V_norm)
             x_init = tf.nn.conv2d_transpose(net, V_norm, target_shape, [1, stride_h, stride_w, 1], padding="SAME")
             x_init = tf.nn.bias_add(x_init, b)
-            m_init, v_init = tf.nn.moments(x_init, [0,1,2])
-            scale_init = 1.0/tf.sqrt(v_init + 1e-8)
-            x_init = tf.reshape(scale_init,[1,1,1,output_dim])*(x_init-tf.reshape(m_init,[1,1,1,output_dim]))
-            return g*x_init
+            m_init, v_init = tf.nn.moments(x_init, [0, 1, 2])
+            scale_init = 1.0 / tf.sqrt(v_init + 1e-8)
+            x_init = tf.reshape(scale_init, [1, 1, 1, output_dim]) * (
+                        x_init - tf.reshape(m_init, [1, 1, 1, output_dim]))
+            return g * x_init
 
-
-    def conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim, padding="SAME", initializer=None, name=None, trainable=True, bias=True):
+    def conv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim, padding="SAME", initializer=None,
+               name=None, trainable=True, bias=True):
         self.assert_tensor(net)
-
 
         layer_regularizer = self.config_option("layer_regularizer")
         if layer_regularizer == 'cosine_norm':
@@ -334,10 +344,10 @@ class TensorflowOps:
             return self.spectralnorm_conv2d(net, filter_w, filter_h, stride_w, stride_h, output_dim, padding=padding)
 
         if self.config_option("l2_scale"):
-            net = net / tf.sqrt(float(filter_w)/float(stride_w)*float(filter_h)/float(stride_h))
+            net = net / tf.sqrt(float(filter_w) / float(stride_w) * float(filter_h) / float(stride_h))
 
         with tf.variable_scope(self.generate_name(name), reuse=self._reuse):
-            shape=[filter_h, filter_w, net.get_shape()[-1], output_dim]
+            shape = [filter_h, filter_w, net.get_shape()[-1], output_dim]
             if initializer is None:
                 initializer = self.initializer
             w = self.get_weight(shape, initializer=initializer, trainable=trainable)
@@ -347,23 +357,24 @@ class TensorflowOps:
                 conv = tf.nn.bias_add(conv, biases)
             return conv
 
-    def deconv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim, initializer=None, name=None, trainable=True, bias=True):
+    def deconv2d(self, net, filter_w, filter_h, stride_w, stride_h, output_dim, initializer=None, name=None,
+                 trainable=True, bias=True):
         self.assert_tensor(net)
         shape = self.shape(net)
         layer_regularizer = self.config_option("layer_regularizer")
         if layer_regularizer == 'weight_norm':
             return self.weightnorm_deconv2d(net, filter_w, filter_h, stride_w, stride_h, output_dim)
-        output_shape = [shape[0], shape[1]*stride_h, shape[2]*stride_w, output_dim]
+        output_shape = [shape[0], shape[1] * stride_h, shape[2] * stride_w, output_dim]
         init_bias = 0.
         with tf.variable_scope(self.generate_name(name), reuse=self._reuse):
             # filter : [height, width, output_channels, in_channels]
-            shape=[filter_h, filter_w, output_dim, shape[3]]
+            shape = [filter_h, filter_w, output_dim, shape[3]]
             if initializer is None:
                 initializer = self.initializer
             w = self.get_weight(shape, initializer=initializer, trainable=trainable)
 
             deconv = tf.nn.conv2d_transpose(net, w, output_shape=output_shape,
-                                    strides=[1, stride_h, stride_w, 1])
+                                            strides=[1, stride_h, stride_w, 1])
             if bias:
                 biases = self.get_bias([output_shape[-1]])
                 deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
@@ -374,8 +385,8 @@ class TensorflowOps:
         with tf.variable_scope(self.generate_name(), reuse=self._reuse):
             w = self.get_weight([self.shape(net)[1], output_dim], name='cos_w')
             b = self.get_bias([output_dim], constant=0.001)
-            w_norm = tf.sqrt(tf.reduce_sum(w**2, axis=0, keep_dims=True) + b ** 2)+0.000001
-            x_norm = tf.sqrt(tf.reduce_sum(net**2, axis=1, keep_dims=True) + 0.000001)
+            w_norm = tf.sqrt(tf.reduce_sum(w ** 2, axis=0, keep_dims=True) + b ** 2) + 0.000001
+            x_norm = tf.sqrt(tf.reduce_sum(net ** 2, axis=1, keep_dims=True) + 0.000001)
             return (tf.matmul(net, w) + 0.001 * b) / w_norm / x_norm
 
     def weight_norm_linear(self, net, output_dim):
@@ -384,7 +395,7 @@ class TensorflowOps:
             v = self.get_weight([self.shape(net)[1], output_dim], name='weighnorm_v')
             v_norm = tf.nn.l2_normalize(v, [0])
             b = self.get_bias([output_dim], constant=0.001)
-            return (tf.matmul(net, v_norm) * g+b)
+            return (tf.matmul(net, v_norm) * g + b)
 
     def linear(self, net, output_dim, initializer=None, name=None, trainable=True, bias=True):
         linear_type = self.config_option("linear_type")
@@ -395,11 +406,11 @@ class TensorflowOps:
         self.assert_tensor(net)
         shape = self.shape(net)
         with tf.variable_scope(self.generate_name(name), reuse=self._reuse):
-            linshape=[shape[1], output_dim]
+            linshape = [shape[1], output_dim]
             if initializer is None:
                 initializer = self.initializer
             w = self.get_weight(linshape, initializer=initializer, trainable=trainable)
-            if(bias):
+            if (bias):
                 bias = self.get_bias([output_dim], trainable=trainable)
                 return tf.matmul(net, w) + bias
             else:
@@ -408,10 +419,11 @@ class TensorflowOps:
     def reduce_linear(self):
         def _build(net, axis=1):
             return self.linear(net, 1)
+
         return _build
 
     def nsoftplus(self, net):
-        return tf.log(tf.exp(net)+1)/np.log(2) - 1.0
+        return tf.log(tf.exp(net) + 1) / np.log(2) - 1.0
 
     def clamped(self, net):
         return tf.maximum(0., tf.minimum(net, 1.))
@@ -422,28 +434,28 @@ class TensorflowOps:
     def null(self):
         def _null(_x):
             return _x
+
         return _null
 
     def groupsort(self, n=2):
         def _activation(v):
-            fv = tf.reshape(v,[-1])
+            fv = tf.reshape(v, [-1])
             length = self.shape(fv)[0]
-            if(length < n or length % n != 0):
+            if (length < n or length % n != 0):
                 print("not sorting", length)
                 return v
-            fv = tf.reshape(v,[-1, n])
+            fv = tf.reshape(v, [-1, n])
             if n == 2:
-                b,c = tf.split(fv, 2, 1)
-                newv = tf.concat([tf.minimum(b, c), tf.maximum(b,c)], axis=1)
-                newv = tf.reshape(newv,self.shape(v))
+                b, c = tf.split(fv, 2, 1)
+                newv = tf.concat([tf.minimum(b, c), tf.maximum(b, c)], axis=1)
+                newv = tf.reshape(newv, self.shape(v))
                 return newv
 
             newv = tf.contrib.framework.sort(fv)
-            newv = tf.reshape(newv,self.shape(v))
+            newv = tf.reshape(newv, self.shape(v))
             return newv
 
         return _activation
-
 
     def double_sided(self):
         def _activation(_x):
@@ -462,22 +474,19 @@ class TensorflowOps:
                 a = activation(net)
                 self.activation_name = names[1]
                 b = activation(-net)
-                net = tf.concat([a,b],axis=1)
+                net = tf.concat([a, b], axis=1)
             elif len(orig_shape) == 4:
                 self.activation_name = names[0]
                 a = activation(net)
                 self.activation_name = names[1]
                 b = activation(-net)
-                net = tf.concat([a,b],axis=3)
+                net = tf.concat([a, b], axis=3)
             else:
                 raise "Two sided relu activation requires input dimensions of 2 or 4"
             self.activation_name = namesstr
             return net
 
-
         return _activation
-
-
 
     def prelu(self):
         def _prelu(_x):
@@ -488,7 +497,7 @@ class TensorflowOps:
             name = None
             trainable = None
             if hasattr(self, 'activation_name'):
-                name = self.activation_name 
+                name = self.activation_name
 
             if hasattr(self, 'activation_trainable'):
                 if self.activation_trainable == 'false':
@@ -498,12 +507,12 @@ class TensorflowOps:
 
             name = name or self.generate_name()
             with tf.variable_scope(name, reuse=self._reuse):
-                print("Creating variable",name,self._reuse, trainable)
-                alphas = tf.get_variable('prelu', 
-                          _x.get_shape()[-1],
-                          initializer=tf.random_normal_initializer(mean=0.0,stddev=0.01),
-                          dtype=tf.float32,
-                          trainable=trainable)
+                print("Creating variable", name, self._reuse, trainable)
+                alphas = tf.get_variable('prelu',
+                                         _x.get_shape()[-1],
+                                         initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01),
+                                         dtype=tf.float32,
+                                         trainable=trainable)
                 pos = tf.nn.relu(_x)
                 neg = alphas * (_x - abs(_x)) * 0.5
 
@@ -520,25 +529,23 @@ class TensorflowOps:
             orig_shape = self.shape(_x)
             net = _x
             if len(orig_shape) == 2:
-                a = tf.slice(net, [0,0], [ops.shape(net)[0], ops.shape(net)[1]//2])
-                b = tf.slice(net, [0,ops.shape(net)[1]//2],[ops.shape(net)[0], ops.shape(net)[1]//2])
+                a = tf.slice(net, [0, 0], [ops.shape(net)[0], ops.shape(net)[1] // 2])
+                b = tf.slice(net, [0, ops.shape(net)[1] // 2], [ops.shape(net)[0], ops.shape(net)[1] // 2])
                 a = activation(a)
                 b = -activation(-b)
-                net = tf.concat([a,b],axis=1)
+                net = tf.concat([a, b], axis=1)
             elif len(orig_shape) == 4:
                 print("Size is", net)
-                a = tf.slice(net, [0,0,0,0], [-1, -1,-1, ops.shape(net)[3]//2])
-                b = tf.slice(net, [0,0,0,ops.shape(net)[3]//2],[-1, -1,-1,ops.shape(net)[3]//2])
+                a = tf.slice(net, [0, 0, 0, 0], [-1, -1, -1, ops.shape(net)[3] // 2])
+                b = tf.slice(net, [0, 0, 0, ops.shape(net)[3] // 2], [-1, -1, -1, ops.shape(net)[3] // 2])
                 a = activation(a)
                 b = -activation(-b)
-                net = tf.concat([a,b],axis=3)
+                net = tf.concat([a, b], axis=3)
             else:
                 raise "Bipolar activation requires input dimensions of 2 or 4"
             return tf.reshape(net, orig_shape)
 
-
         return _bipolar
-
 
     def swish(self, x):
         return x * tf.nn.sigmoid(x)
@@ -550,20 +557,20 @@ class TensorflowOps:
             _x = tf.reshape(_x, [orig_shape[0], -1])
 
             with tf.variable_scope(self.generate_name(name), reuse=self._reuse):
-                alphas = tf.get_variable('trelu', 
-                          _x.get_shape()[-1],
-                          initializer=tf.random_normal_initializer(mean=0.0,stddev=0.01),
-                          dtype=tf.float32)
+                alphas = tf.get_variable('trelu',
+                                         _x.get_shape()[-1],
+                                         initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01),
+                                         dtype=tf.float32)
                 net = activation(_x - alphas) + alphas
 
-            #TODO this is wrong - need to add to biases only on no reuse
+            # TODO this is wrong - need to add to biases only on no reuse
             self.add_weights(alphas)
             return tf.reshape(net, orig_shape)
 
         return _trelu
 
     def gelu(self, x):
-        return 0.5*x*(1+tf.nn.tanh(np.sqrt(2/np.pi)*(x+0.044715*tf.pow(x,3))))
+        return 0.5 * x * (1 + tf.nn.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3))))
 
     def frelu(self):
         def _frelu(_x, name=None):
@@ -572,13 +579,13 @@ class TensorflowOps:
             _x = tf.reshape(_x, [orig_shape[0], -1])
 
             with tf.variable_scope(self.generate_name(name), reuse=self._reuse):
-                alphas = tf.get_variable('frelu', 
-                          [1],
-                          initializer=tf.random_normal_initializer(mean=0.0,stddev=0.01),
-                          dtype=tf.float32)
+                alphas = tf.get_variable('frelu',
+                                         [1],
+                                         initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01),
+                                         dtype=tf.float32)
                 net = activation(_x) + alphas
 
-            #TODO this is wrong - need to add to biases only on no reuse
+            # TODO this is wrong - need to add to biases only on no reuse
             self.add_weights(alphas)
             return tf.reshape(net, orig_shape)
 
@@ -610,7 +617,7 @@ class TensorflowOps:
         """
         Takes any size tensor and reduces it to a single value using `reduce`.
         """
-        while(sum(self.shape(net)) > 1):
+        while (sum(self.shape(net)) > 1):
             net = reduce(net)
             net = tf.squeeze(net)
 
@@ -704,7 +711,24 @@ class TensorflowOps:
         namespaced_method = name.split(":")[1]
         method = namespaced_method.split(".")[-1]
         namespace = ".".join(namespaced_method.split(".")[0:-1])
-        return getattr(importlib.import_module(namespace),method)
+        return getattr(importlib.import_module(namespace), method)
 
     def lookup_class(self, name):
         return self.lookup_function(name)
+
+    def initialize_variables(self, session):
+        with tf.device(self.device):
+            if len(self.variables()) == 0:
+                return
+            init = tf.variables_initializer(self.variables())
+            session.run(init)
+            self.initialized = True
+
+    def new_session(self, tfconfig):
+        if tfconfig is None:
+            tfconfig = tf.ConfigProto(allow_soft_placement=True)
+            # tfconfig = tf.ConfigProto(log_device_placement=True)
+            tfconfig.gpu_options.allow_growth = True
+
+        with tf.device(self.device):
+            return tf.Session(config=tfconfig)

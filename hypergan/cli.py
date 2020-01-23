@@ -32,7 +32,6 @@ class CLI:
         self.gan_fn = gan_fn
         self.gan_config = gan_config
         self.inputs_fn = inputs_fn
-        self.gan = gan_fn(gan_config,None)
         args = hc.Config(args)
         self.args = args
 
@@ -45,6 +44,8 @@ class CLI:
 
         self.sampler_name = args.sampler
         self.sampler = None
+
+        self.gan = gan_fn(gan_config, inputs_fn(args.batch_size))
 
         self.validate()
 
