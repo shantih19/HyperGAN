@@ -186,6 +186,7 @@ class CLI:
             self.sample()
 
     def train_tpu(self):
+        tf.logging.set_verbosity(tf.logging.INFO)
         i = 0
         tpu_name = 'grpc://' + os.environ['COLAB_TPU_ADDR']
         cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu=tpu_name)
